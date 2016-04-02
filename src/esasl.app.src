@@ -1,9 +1,7 @@
 {application, esasl,
  [{description, "Erlang SASL authentication"},
-  {vsn,"@esasl_VSN@"},
-  {modules, [
-	     esasl
-	    ]},
+  {vsn, git},
+  {modules, []},
   {registered, []},
   {env, []},
   {applications, [
