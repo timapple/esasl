@@ -137,7 +137,11 @@ server_start(Server_ref, Mech, Service, Host) when is_list(Mech),
 	    {ok, {Pid, Ref}};
 	E ->
 	    E
-    end.
+    end;
+server_start(Server_ref, Mech, Service, Host) when is_list(Mech),
+						   is_list(Service),
+						   is_binary(Host) ->
+    server_start(Server_ref, Mech, Service, binary_to_list(Host)).
 
 %%--------------------------------------------------------------------
 %% Function: client_start(Server_ref, Mech, Service, Host)
