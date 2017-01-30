@@ -50,35 +50,12 @@
 	 property_set/3,
 	 mechlist/2]).
 
-
 %% Internal exports
--export([init/4,
-	 test/0,
-	 test/1,
-	 test_init/3,
-	 server_init/3,
-	 client_init/3]).
+-export([init/4]).
 
 -include_lib("kernel/include/inet.hrl").
 
 -define(APP, esasl).
-
-%%-define(ENABLE_DEBUG, yes).
-
--ifdef(ENABLE_DEBUG).
--define(INFO, io:format).
--define(DEBUG, io:format).
-%% -define(WARNING, io:format).
-%% -define(ERROR, io:format).
--else.
--define(INFO, ignore).
--define(DEBUG, ignore).
-%% -define(WARNING, ignore).
-%% -define(ERROR, ignore).
--endif.
-
--define(WARNING, io:format).
--define(ERROR, io:format).
 
 %%====================================================================
 %% API
@@ -248,12 +225,12 @@ lookup_server(Server_ref) ->
     end.
 
 call_port(Pid, Msg) ->
-    ?INFO("call_port ~p~n", [Msg]),
+    error_logger:info_msg("call_port ~p~n", [Msg]),
     Ref = make_ref(),
     Pid ! {gsasl_call, {self(), Ref}, Msg},
     receive
 	{gsasl_reply, _Pid, Ref, Result} ->
-	    ?DEBUG("call_port Result ~p~n", [Result]),
+	    error_logger:info_msg("call_port Result ~p~n", [Result]),
 	    Result
     end.
 
@@ -279,20 +256,20 @@ init(ServerName, KeyTab, ExtPrg, Ccname) ->
 		[]
 	end,
     Env = KeyTabEnv ++ Ccname_env,
-    ?INFO("port env ~p~n", [Env]),
+    error_logger:info_msg("port env ~p~n", [Env]),
     Port = open_port({spawn, ExtPrg}, [{packet, 2}, binary, exit_status, {env,  Env}]),
-    ?INFO("port inited~n", []),
+    error_logger:info_msg("port inited~n", []),
     proc_lib:init_ack(self()),
     loop(Port, []).
 
 loop(Port, Queue) ->
     receive
 	{gsasl_call, {Caller, From}, Msg} ->
-	    ?DEBUG("~p: Calling port with ~p: ~p~n", [self(), Caller, Msg]),
+	    error_logger:info_msg("~p: Calling port with ~p: ~p~n", [self(), Caller, Msg]),
 %% 	    case Msg of
 %% 		{start, _Arg} ->
 %% 		    Res = link(Caller),
-%% 		    ?DEBUG("link ~p~n", [Res])
+%% 		    error_logger:info_msg("link ~p~n", [Res])
 %% 	    end,
 
 	    erlang:port_command(Port, term_to_binary(Msg)),
@@ -302,14 +279,14 @@ loop(Port, Queue) ->
 	{Port, {data, Data}} ->
 	    Term = binary_to_term(Data),
 	    [{Caller, _Msg, From} | Queue1] = Queue,
-	    ?DEBUG("~p: Result ~p: ~p~n", [self(), Caller, Term]),
+	    error_logger:info_msg("~p: Result ~p: ~p~n", [self(), Caller, Term]),
 	    Caller ! {gsasl_reply, self(), From, Term},
 	    loop(Port, Queue1);
 	{Port, {exit_status, Status}} when Status > 128 ->
-	    ?ERROR("Port terminated with signal: ~p~n", [Status-128]),
+	    error_logger:error_msg("Port terminated with signal: ~p~n", [Status-128]),
 	    exit({port_terminated, Status});
 	{Port, {exit_status, Status}} ->
-	    ?ERROR("Port terminated with status: ~p~n", [Status]),
+	    error_logger:error_msg("Port terminated with status: ~p~n", [Status]),
 	    exit({port_terminated, Status});
 	{'EXIT', Port, Reason} ->
 	    exit(Reason);
@@ -317,6 +294,6 @@ loop(Port, Queue) ->
 	    erlang:port_close(Port),
 	    exit(normal);
 	Term ->
-	    ?ERROR("Unhandled term ~p~n", [Term])
+	    error_logger:error_msg("Unhandled term ~p~n", [Term])
     end,
     loop(Port, Queue).
