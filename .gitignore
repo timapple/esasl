@@ -1,8 +1,15 @@
 *.d
+*.diff
 *.o
+*.orig
+*.patch
+*.rej
+*.so
 *~
-.deps
+.DS_Store
+.eunit/
 .rebar/
+compile_commands.json
+deb-build
 ebin/
-gsasl_drv
 priv/
