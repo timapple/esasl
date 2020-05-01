@@ -295,5 +295,5 @@ loop(Port, Queue) ->
 	    exit(normal);
 	Term ->
 	    error_logger:error_msg("Unhandled term ~p~n", [Term])
-    end,
-    loop(Port, Queue).
+	    loop(Port, Queue)
+    end.
