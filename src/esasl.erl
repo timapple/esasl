@@ -50,35 +50,12 @@
 	 property_set/3,
 	 mechlist/2]).
 
-
 %% Internal exports
--export([init/4,
-	 test/0,
-	 test/1,
-	 test_init/3,
-	 server_init/3,
-	 client_init/3]).
+-export([init/4]).
 
 -include_lib("kernel/include/inet.hrl").
 
 -define(APP, esasl).
-
-%%-define(ENABLE_DEBUG, yes).
-
--ifdef(ENABLE_DEBUG).
--define(INFO, io:format).
--define(DEBUG, io:format).
-%% -define(WARNING, io:format).
-%% -define(ERROR, io:format).
--else.
--define(INFO, ignore).
--define(DEBUG, ignore).
-%% -define(WARNING, ignore).
-%% -define(ERROR, ignore).
--endif.
-
--define(WARNING, io:format).
--define(ERROR, io:format).
 
 %%====================================================================
 %% API
@@ -137,7 +114,11 @@ server_start(Server_ref, Mech, Service, Host) when is_list(Mech),
 	    {ok, {Pid, Ref}};
 	E ->
 	    E
-    end.
+    end;
+server_start(Server_ref, Mech, Service, Host) when is_list(Mech),
+						   is_list(Service),
+						   is_binary(Host) ->
+    server_start(Server_ref, Mech, Service, binary_to_list(Host)).
 
 %%--------------------------------------------------------------------
 %% Function: client_start(Server_ref, Mech, Service, Host)
@@ -244,12 +225,12 @@ lookup_server(Server_ref) ->
     end.
 
 call_port(Pid, Msg) ->
-    ?INFO("call_port ~p~n", [Msg]),
+    error_logger:info_msg("call_port ~p~n", [Msg]),
     Ref = make_ref(),
     Pid ! {gsasl_call, {self(), Ref}, Msg},
     receive
 	{gsasl_reply, _Pid, Ref, Result} ->
-	    ?DEBUG("call_port Result ~p~n", [Result]),
+	    error_logger:info_msg("call_port Result ~p~n", [Result]),
 	    Result
     end.
 
@@ -275,20 +256,20 @@ init(ServerName, KeyTab, ExtPrg, Ccname) ->
 		[]
 	end,
     Env = KeyTabEnv ++ Ccname_env,
-    ?INFO("port env ~p~n", [Env]),
+    error_logger:info_msg("port env ~p~n", [Env]),
     Port = open_port({spawn, ExtPrg}, [{packet, 2}, binary, exit_status, {env,  Env}]),
-    ?INFO("port inited~n", []),
+    error_logger:info_msg("port inited~n", []),
     proc_lib:init_ack(self()),
     loop(Port, []).
 
 loop(Port, Queue) ->
     receive
 	{gsasl_call, {Caller, From}, Msg} ->
-	    ?DEBUG("~p: Calling port with ~p: ~p~n", [self(), Caller, Msg]),
+	    error_logger:info_msg("~p: Calling port with ~p: ~p~n", [self(), Caller, Msg]),
 %% 	    case Msg of
 %% 		{start, _Arg} ->
 %% 		    Res = link(Caller),
-%% 		    ?DEBUG("link ~p~n", [Res])
+%% 		    error_logger:info_msg("link ~p~n", [Res])
 %% 	    end,
 
 	    erlang:port_command(Port, term_to_binary(Msg)),
@@ -298,14 +279,14 @@ loop(Port, Queue) ->
 	{Port, {data, Data}} ->
 	    Term = binary_to_term(Data),
 	    [{Caller, _Msg, From} | Queue1] = Queue,
-	    ?DEBUG("~p: Result ~p: ~p~n", [self(), Caller, Term]),
+	    error_logger:info_msg("~p: Result ~p: ~p~n", [self(), Caller, Term]),
 	    Caller ! {gsasl_reply, self(), From, Term},
 	    loop(Port, Queue1);
 	{Port, {exit_status, Status}} when Status > 128 ->
-	    ?ERROR("Port terminated with signal: ~p~n", [Status-128]),
+	    error_logger:error_msg("Port terminated with signal: ~p~n", [Status-128]),
 	    exit({port_terminated, Status});
 	{Port, {exit_status, Status}} ->
-	    ?ERROR("Port terminated with status: ~p~n", [Status]),
+	    error_logger:error_msg("Port terminated with status: ~p~n", [Status]),
 	    exit({port_terminated, Status});
 	{'EXIT', Port, Reason} ->
 	    exit(Reason);
@@ -313,132 +294,6 @@ loop(Port, Queue) ->
 	    erlang:port_close(Port),
 	    exit(normal);
 	Term ->
-	    ?ERROR("Unhandled term ~p~n", [Term]),
+	    error_logger:error_msg("Unhandled term ~p~n", [Term])
 	    loop(Port, Queue)
     end.
-
-
-%%====================================================================
-%% Test functions
-%%====================================================================
-
-test() ->
-    test(["xmpp", gethostname(), "xmpp.keytab"]).
-
-gethostname() ->
-    {ok, Name} = inet:gethostname(),
-    case inet:gethostbyname(Name) of
-	{ok, Hostent} when is_record(Hostent, hostent) ->
-	    Hostent#hostent.h_name;
-	_ ->
-	    Name
-    end.
-
-test([Service, Hostname, Key_tab]) when is_list(Service),
-					is_list(Hostname),
-					is_list(Key_tab) ->
-    process_flag(trap_exit, true),
-    {ok, Pid} = start_link(Key_tab, ""),
-    Test = proc_lib:start_link(?MODULE, test_init, [Pid, Service, Hostname]),
-    Result =
-	receive
-	    {'EXIT', Test, Reason} ->
-		?INFO("Result ~p ~p~n", [Test, Reason]),
-		Reason;
-	    E ->
-		?INFO("Error ~p~n", [E])
-	end,
-    process_flag(trap_exit, false),
-    io:format("test success~n",[]),
-    stop(Pid),
-    Result.
-
-test_init(Pid, Service, Host_name) ->
-    process_flag(trap_exit, true),
-    Server = proc_lib:start_link(?MODULE, server_init, [Pid, Service, Host_name]),
-    Client = proc_lib:start_link(?MODULE, client_init, [Pid, Service, Host_name]),
-    
-    Server ! {set_peer, Client},
-    Client ! {set_peer, Server},
-    Client ! {data, <<>>},
-
-    proc_lib:init_ack(self()),
-    test_loop(Server, Client),
-    ok.
-
-test_loop(exit, exit) ->
-    ?DEBUG("Test exit~n", []),
-    ok;
-test_loop(Server, Client) ->
-    ?DEBUG("test_loop ~p ~p~n", [Server, Client]),
-
-    receive
-	{'EXIT', Server, Reason} ->
-	    ?DEBUG("Server exit ~p~n", [Reason]),
-	    exit(Reason);
-	{'EXIT', Client, Reason} ->
-	    ?DEBUG("Client exit ~p~n", [Reason]),
-	    test_loop(Server, exit);
-	S ->
-	    io:format("message ~p~n", [S]),
-	    test_loop(Server, Client)
-    end.
-
-client_init(Pid, Service, Host_name) ->
-    ?INFO("client_init ~p ~p~n", [self(), Pid]),
-
-    {ok, Client} = client_start(Pid, "GSSAPI", Service, Host_name),
-    ?INFO("client_init ~p ~p~n", [self(), Client]),
-    property_set(Client, authid, "authid_foo"),
-    property_set(Client, authzid, "authzid_foo"),
-    property_set(Client, password, "secret"),
-    proc_lib:init_ack(self()),
-    sasl_loop(Client, client, undefined_client).
-
-server_init(Pid, Service, Host_name) ->
-    ?INFO("server_init ~p ~p~n", [self(), Pid]),
-
-    {ok, Server} = server_start(Pid, "GSSAPI", Service, Host_name),
-    ?INFO("server_init ~p ~p~n", [self(), Server]),
-    proc_lib:init_ack(self()),
-    sasl_loop(Server, server, undefined_server).
-
-sasl_loop(Ref, Mode, Peer) ->
-    receive
-	{data, Data} ->
- 	    ?INFO("data received~n", []),
-	    sasl_data(Ref, Mode, Peer, Data),
-	    sasl_loop(Ref, Mode, Peer);
-	{set_peer, Peer1} ->
-	    ?DEBUG("set_peer received~n", []),
-	    sasl_loop(Ref, Mode, Peer1);
-	stop ->
-	    exit(normal)
-    end.
-
-sasl_data(Ref, Mode, Peer, Data) ->
-    case step(Ref, Data) of
-	{needsmore, Resp} ->
-	    Peer ! {data, Resp};
-	{ok, Resp} ->
-	    if Resp == "" ->
-		    ignore;
-	       true ->
-		    Peer ! {data, Resp}
-	    end,
-	    if Mode == server ->
-		    Authid = property_get(Ref, authid),
-		    Authzid = property_get(Ref, authzid),
-		    Display_name = property_get(Ref, gssapi_display_name),
-		    ?DEBUG("authid:~p authzid:~p display:~p~n", [Authid, Authzid, Display_name]),
-		    finish(Ref),
-		    exit({authenticated, Authzid, Display_name});
-	       Mode == client ->
-		    exit(normal)
-	    end;
-	{error, Reason} ->
-	    exit({error, Reason})
-    end.
-
-ignore(_,_) ->
-    ok.
